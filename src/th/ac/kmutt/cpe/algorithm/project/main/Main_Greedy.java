@@ -12,7 +12,7 @@ public class Main_Greedy {
          * Integer.MAX_VALUE ใน Array หมายถึง End
          * วิธีใช้เปิด Command Prompt
          * javac  -d bin -sourcepath src .\src\th\ac\kmutt\cpe\algorithm\project\main\*
-         * ไปที่ folder input แล้ว คลิกขวาที่ filetxt สักอันแล้วก็อปปี้ path
+         * ไปที่ folder input แล้ว คลิกขวาที่ filetxt สักอันแล้ว Copy Relative Path
          * java -cp bin th.ac.kmutt.cpe.algorithm.project.main.Main_Greedy < แปะfilepath
          */
 
