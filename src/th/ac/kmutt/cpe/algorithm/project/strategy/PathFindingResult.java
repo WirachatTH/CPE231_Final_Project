@@ -33,7 +33,7 @@ public class PathFindingResult {
         boolean[][] onPath = new boolean[rows][cols];
 
         Map<Integer, Node> nodeMap = graph.getNodeMap();
-        java.util.List<Integer> pathList = result.getPath();
+        ArrayList<Integer> pathList = result.getPath();
 
         for (int id : pathList) {
             Node node = nodeMap.get(id);
