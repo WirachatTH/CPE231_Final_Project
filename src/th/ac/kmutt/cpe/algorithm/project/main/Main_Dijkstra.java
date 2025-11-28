@@ -12,6 +12,8 @@ public class Main_Dijkstra {
          * Integer.MAX_VALUE ใน Array หมายถึง End
          * วิธีใช้เปิด Command Prompt
          * javac  -d bin -sourcepath src .\src\th\ac\kmutt\cpe\algorithm\project\main\*
+         * javac -d bin -sourcepath src .\src\th\ac\kmutt\cpe\algorithm\project\graph\*
+         * javac -d bin -sourcepath src .\src\th\ac\kmutt\cpe\algorithm\project\strategy\*
          * ไปที่ folder input แล้ว คลิกขวาที่ filetxt สักอันแล้วก็อปปี้ path
          * java -cp bin th.ac.kmutt.cpe.algorithm.project.main.Main_Dijkstra < แปะfilepath
          */
