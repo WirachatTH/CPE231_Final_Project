@@ -21,7 +21,6 @@ public class Main_BFS {
         // Part1: รับ input ล้วนๆ
         ArrayList<ArrayList<Integer>> maze = new ArrayList<>();
         ReadFile fileReader  = new ReadFile();
-        fileReader.readFile();
         maze = fileReader.getInput();
 
         // for (int i = 0; i < maze.size(); i++) {
