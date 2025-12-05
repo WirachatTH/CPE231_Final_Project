@@ -4,14 +4,18 @@ import java.util.*;
 public class ReadFile {
     private ArrayList<ArrayList<Integer>> input;
 
-    public void readFile(){
+    private int startRow, startCol;
+    private int goalRow, goalCol;
+    private int rows, cols;
+
+    public ReadFile(){
         Scanner sc = new Scanner(System.in);
         ArrayList<ArrayList<Integer>> maze = new ArrayList<>();
         while(sc.hasNextLine()) {
             String temp = sc.nextLine().trim();
             ArrayList<Integer> row = new ArrayList<>();
 
-            for (int j = 0; j < temp.length(); j++) {
+            for (int j = 0;j < temp.length();j++) {
                 if(temp.charAt(j)  == '"'){
                     continue;
                 }
@@ -23,7 +27,7 @@ public class ReadFile {
                 }else if (temp.charAt(j)  == 'G') {
                     row.add(Integer.MAX_VALUE);
                 }else if (Character.isDigit(temp.charAt(j))) {
-                    StringBuilder num = new StringBuilder(); //สร้างไว้กันเคสเลข 2,3 หลัก
+                    StringBuilder num = new StringBuilder();//สร้างไว้กันเคสเลข 2,3 หลัก
                     num.append(temp.charAt(j));
 
                     //เช็คว่าตัวต่อไปเป็นเลขไหม ถ้าเป็นก็เพิ่มไปใน num
@@ -40,9 +44,47 @@ public class ReadFile {
 
         sc.close();
         input = maze;
+        rows = input.size();
+        cols = input.get(0).size();
     }
 
     public ArrayList<ArrayList<Integer>> getInput(){
         return input;
+    }
+
+    public int[][] getGAMap() {
+        int[][] gaGrid = new int[rows][cols];
+        
+        for(int r = 0;r < rows;r++) {
+            for(int c = 0;c < cols;c++) {
+                int val = input.get(r).get(c);
+                
+                if (val == Integer.MIN_VALUE || val == Integer.MAX_VALUE) {
+                    gaGrid[r][c] = 0;
+                } else {
+                    gaGrid[r][c] = val;
+                }
+            }
+        }
+        return gaGrid;
+    }
+
+    public int getStartRow() {
+        return startRow;
+    }
+    public int getStartCol() {
+        return startCol;
+    }
+    public int getGoalRow() {
+        return goalRow;
+    }
+    public int getGoalCol() {
+        return goalCol;
+    }
+    public int getRows() {
+        return rows;
+    }
+    public int getCols() {
+        return cols;
     }
 }
