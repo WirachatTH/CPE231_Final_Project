@@ -59,7 +59,9 @@ public class ReadFile {
             for(int c = 0;c < cols;c++) {
                 int val = input.get(r).get(c);
                 
-                if (val == Integer.MIN_VALUE || val == Integer.MAX_VALUE) {
+                if (val == Integer.MIN_VALUE){
+                    gaGrid[r][c] = -2;
+                }else if (val == Integer.MAX_VALUE) {
                     gaGrid[r][c] = 0;
                 } else {
                     gaGrid[r][c] = val;
