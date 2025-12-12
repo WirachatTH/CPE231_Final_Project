@@ -7,11 +7,6 @@ public class Agent {
     private int fitness;
     public List<Integer> pathMap;  //พิกัด(col 3ตัวแรกที่เหลือคือ row) index= ก้าวที่เดิน
 
-    // public Agent(int[] direct){
-    //     this.direct = direct;
-    //     pathMap = new HashMap<>();
-    //     pathMap.put(0, 001001); //เริ่มต้นที่จุดเริ่มต้นเสมอ
-    // }
     public Agent(int directSize){
         direct = new int[directSize];
         pathMap = new ArrayList<>();
