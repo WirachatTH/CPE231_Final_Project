@@ -1,6 +1,7 @@
 package th.ac.kmutt.cpe.algorithm.project.strategy;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import th.ac.kmutt.cpe.algorithm.project.graph.*;
 
@@ -15,6 +16,8 @@ public class PathFindingResult {
         this.totalCost = totalCost;
         this.path = path;
     }
+
+    public PathFindingResult() {}
 
     public int getTotalCost() {
         return totalCost;
@@ -74,6 +77,63 @@ public class PathFindingResult {
                 // ใส่สีถ้าอยู่บน path
                 if (onPath[r][c]) {
                     if (val == Integer.MIN_VALUE || val == Integer.MAX_VALUE) {
+                        // S และ G ใช้สีเหลือง
+                        line.append(YELLOW).append(cellText).append(RESET);
+                    } else {
+                        // path ปกติใช้สีเขียว
+                        line.append(GREEN).append(cellText).append(RESET);
+                    }
+                } else {
+                    line.append(cellText);
+                }
+            }
+
+            System.out.println(line.toString());
+        }
+    }
+
+    public void visualizePath(int[][] maze, List<Integer> coordinate) {
+        int rows = maze.length;
+        int cols = maze[0].length;
+        // System.out.println("rows "+rows);
+        // System.out.println("cols "+cols);
+
+        // 1) mark ว่า cell ไหนอยู่บน path
+        boolean[][] onPath = new boolean[rows][cols];
+        for (int id : coordinate) {
+            int row = id / cols;
+            int col = id % cols;
+            onPath[row][col] = true;
+        }
+
+        // 2) พิมพ์ maze โดยแสดงค่าจริง
+        System.out.println("\n=== Path Visualization ===");
+        for (int r = 0; r < rows; r++) {
+            StringBuilder line = new StringBuilder();
+
+            for (int c = 0; c < cols; c++) {
+                int val = maze[r][c];
+                String cellText;
+                // อย่าแตะถ้าไม่จำเป็นขอร้อง
+                // แปลงค่าใน array -> ข้อความที่จะแสดง
+                if (val == -1) {
+                    cellText = "### ";  // กำแพง
+                } else if (val == -2) {
+                    cellText = " S  ";  // Start
+                } else if (val == 0) {
+                    cellText = " G  ";  // Goal
+                } else {
+                    // แสดงค่าจริงของ cell (ปรับให้กว้าง 3 ตัวอักษร + 1 space)
+                    if (val < 10) {
+                        cellText = " " + val + "  ";  // เลข 1 หลัก: " 5  "
+                    } else {
+                        cellText = val + "  ";         // เลข 2 หลัก: "10  "
+                    }
+                }
+
+                // ใส่สีถ้าอยู่บน path
+                if (onPath[r][c]) {
+                    if (val == -2 || val == 0) {
                         // S และ G ใช้สีเหลือง
                         line.append(YELLOW).append(cellText).append(RESET);
                     } else {

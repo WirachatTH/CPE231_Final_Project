@@ -1,6 +1,9 @@
 package th.ac.kmutt.cpe.algorithm.project.main;
 
-import th.ac.kmutt.cpe.algorithm.project.strategy.GeneticStrategy;
+import java.util.List;
+
+import th.ac.kmutt.cpe.algorithm.project.strategy.PathFindingResult;
+import th.ac.kmutt.cpe.algorithm.project.strategy.geneticStrategy.GeneticStrategy;
 
 public class Main_Genetic {
     public static void main(String[] args) {
@@ -10,7 +13,13 @@ public class Main_Genetic {
         int[][] maze = new int[rows][cols];
         maze = fileReader.getGAMap();
 
-        GeneticStrategy result = new GeneticStrategy();
-        result.solve(maze);
+        GeneticStrategy solver = new GeneticStrategy(maze);
+        List<Integer> coordinate = solver.getCoordinate();
+        int totalTime = solver.findTime();
+
+        PathFindingResult result = new PathFindingResult();
+        result.visualizePath(maze, coordinate);
+        System.out.println("Total " + totalTime);
     }
 }
+
