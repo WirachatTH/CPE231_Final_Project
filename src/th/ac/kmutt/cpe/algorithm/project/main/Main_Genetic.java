@@ -15,7 +15,7 @@ public class Main_Genetic {
 
         GeneticStrategy solver = new GeneticStrategy(maze);
         List<Integer> coordinate = solver.getCoordinate();
-        int totalTime = solver.findTime();
+        int totalTime = solver.findFinalTime();
 
         PathFindingResult result = new PathFindingResult();
         result.visualizePath(maze, coordinate);

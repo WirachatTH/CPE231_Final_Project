@@ -30,13 +30,14 @@ public class GeneticStrategy {
     }
     
     public void solve(Agent[] population){
-        int maxGenerations = 20000; 
+        int maxGenerations = 25000; 
         Agent[] tempPopulation = new Agent[population.length];
         
-        int stagnationCount = 0;
+        int totalStagnation = 0;
+        int explosionTimer = 0;
+        
         double lastBestFitness = -1;
-        int fitnessBefore = 0;
-        int repeatSameFitness = 0;
+        boolean solutionFound = false;
 
         for (int gen = 0; gen < maxGenerations; gen++) {
             
@@ -48,39 +49,51 @@ public class GeneticStrategy {
             // 2. เรียงลำดับ (Fitness มาก -> น้อย)
             Arrays.sort(population, Comparator.comparing((Agent a) -> a.getFitness()).reversed());
 
-            // Check Stagnation
             double currentBestFitness = population[0].getFitness();
-            if (Math.abs(currentBestFitness - lastBestFitness) < 0.001) { // ใช้เปรียบเทียบแบบ double
-                stagnationCount++;
+            
+            // เจอ Goal ครั้งแรก
+            if (isGoalReached(population[0])) {
+                if (!solutionFound) {
+                    System.out.println(">>> First Path Found at Gen: " + gen + " | Time: " + findTime(population[0]) + " <<<");
+                    solutionFound = true;
+                }
+            }
+
+            // เช็คว่าคะแนนดีขึ้นไหม
+            if (Math.abs(currentBestFitness - lastBestFitness) < 0.001) {
+                totalStagnation++;
+                explosionTimer++;
             } else {
-                stagnationCount = 0;
+                if (solutionFound) {
+                    System.out.println(">>> New Best Path Optimized! Gen: " + gen + " | Time: " + findTime(population[0]) + " <<<");
+                }
+                totalStagnation = 0;
+                explosionTimer = 0;
                 lastBestFitness = currentBestFitness;
             }
 
-            // 3. เช็คว่าวนซ้ำอยู่ทางเดินเดิมถึง 500 ครั้งรึยัง
-            if(repeatSameFitness == 500){
-                break;
+            // 3. เงื่อนไขหยุด
+            if (solutionFound && totalStagnation > 2500) {
+                 break;
+            }
+
+            // --- ระเบิดประชากร ---
+            boolean triggerExplosion = (explosionTimer > 300);
+            if (triggerExplosion) {
+                explosionTimer = 0; 
             }
 
             // 4. Elitism
-            int elitismCount = (int)(population.length * 0.10); // เก็บตัวเก่งไว้ 10%
+            int elitismCount = (int)(population.length * 0.1); 
             if (elitismCount < 2) elitismCount = 2;
             System.arraycopy(population, 0, tempPopulation, 0, elitismCount);
 
-            // Adaptive Mutation Rate
-            double currentMutationRate = (stagnationCount > 50) ? 0.8 : 0.4; 
+            double currentMutationRate = (explosionTimer > 100) ? 0.9 : 0.4; 
             
-            // ถ้าตันนานเกินไป ล้างประชากรครึ่งหลังทิ้ง (Mass Extinction)
-            boolean massExtinction = (stagnationCount > 150);
-            if (massExtinction) {
-                // System.out.println("!!! Stagnation (" + stagnationCount + "). Injecting fresh blood !!!");
-                stagnationCount = 0; 
-            }
-
             // 5. สร้างประชากรใหม่
             for(int i = elitismCount; i < population.length; i++){
-                if (massExtinction && i > population.length / 3) {
-                    // สร้างใหม่เลยเพื่อกระจายความเสี่ยง
+                double survivors = (rows < 30 && cols < 30) ? 0.45 : 0.6; 
+                if (triggerExplosion && i > (population.length * survivors)) {
                     tempPopulation[i] = new Agent(pathLimit);
                     randomPathNew(tempPopulation[i]);
                 } else {
@@ -91,29 +104,23 @@ public class GeneticStrategy {
             }
             
             population = tempPopulation.clone();
-            int currentFitness = population[0].getFitness();
-            if(currentFitness == fitnessBefore){
-                repeatSameFitness += 1;
-            }else{
-                repeatSameFitness = 0;
-            }
-
-            fitnessBefore = population[0].getFitness();
-            if (gen % 100 == 0) {
-                 System.out.println("Gen " + gen + " | Best Fitness: " + population[0].getFitness() + " | Time: " + findTime(population[0]));
+            
+            if (gen % 500 == 0) {
+                System.out.println("Gen " + gen + " | Best Fitness: " + population[0].getFitness() + " | Time: " + findTime(population[0]));
+                // PathFindingResult result = new PathFindingResult();
+                // result.visualizePath(map, population[population.length/2].pathMap);
             }
         }
 
         finalAgent = population[0];
         cleanCoordinateAgent(finalAgent);
         
-        this.printPopulation(population);
-        System.out.println("Time taken by Best Agent (Optimized): " + findTime());
+        System.out.println("Time taken by Best Agent (Optimized): " + findFinalTime());
     }
 
     // --- Initialization ---
     public Agent[] createInitial(){
-        int popSize = 500;
+        int popSize = 300;
         Agent[] population = new Agent[popSize]; 
 
         for(int i = 0; i < popSize; i++){
@@ -156,7 +163,6 @@ public class GeneticStrategy {
             
             if(nextR >= 0 && nextR < rows && nextC >= 0 && nextC < cols) {
                 int nextID = convertToCoordinate(nextR, nextC);
-                // ไม่เดินชนกำแพง และ ไม่เดินซ้ำจุดเดิมในรอบนี้
                 if( map[nextR][nextC] != -1 && !agent.pathMap.contains(nextID) ){
                     validMoves.add(j);
                 }
@@ -182,21 +188,27 @@ public class GeneticStrategy {
         List<Integer> candidates = !smartMoves.isEmpty() ? smartMoves : validMoves;
         if (candidates.isEmpty()) return -1;
 
-        // เรียงลำดับ: เลือกทางที่ระยะ Manhattan ถึง Goal น้อยที่สุดไว้หน้า
         candidates.sort((m1, m2) -> {
             int r1 = r + dRow[m1];
             int c1 = c + dCol[m1];
             int dist1 = Math.abs(goalRow - r1) + Math.abs(goalCol - c1);
-            
+            int cost1 = map[r1][c1]; 
+
             int r2 = r + dRow[m2];
             int c2 = c + dCol[m2];
             int dist2 = Math.abs(goalRow - r2) + Math.abs(goalCol - c2);
-            
-            return Integer.compare(dist1, dist2);
+            int cost2 = map[r2][c2];
+
+            double weight = 5.0 + (new Random().nextDouble() * 10.0);
+            double score1 = dist1 + (cost1 * weight);
+            double score2 = dist2 + (cost2 * weight);
+
+            return Double.compare(score1, score2);
         });
 
         Random rand = new Random();
-        if (rand.nextDouble() < 0.5) {
+        double rate = (rows < 30 && cols < 30)? 0.75 : 0.05;
+        if (rand.nextDouble() < rate) {
             return candidates.get(0);
         } else {
             return candidates.get(rand.nextInt(candidates.size()));
@@ -219,8 +231,7 @@ public class GeneticStrategy {
     // --- Genetic Operations ---
     public Agent startCorssOver(Agent[] population){
         Random rand = new Random();
-        // เลือกพ่อแม่จาก Top 50%
-        int limit = (int)(population.length * 0.5); 
+        int limit = (int)(population.length * 1); 
         if (limit < 2) limit = population.length;
         
         int indexP1 = rand.nextInt(limit);
@@ -371,7 +382,7 @@ public class GeneticStrategy {
 
         if (reachedGoal) {
             score += 100000; // รางวัลใหญ่
-            score -= (findTime(agent) * 2); // ยิ่งเร็วยิ่งดี
+            score -= (findTime(agent) * 7);
         } else {
             score -= (distance * 20); 
         }
@@ -380,9 +391,9 @@ public class GeneticStrategy {
         agent.setFitness((int)score);
     }
 
-    // private boolean isGoalReached(Agent agent) {
-    //     return agent.getFitness() > 50000; 
-    // }
+    private boolean isGoalReached(Agent agent) {
+        return agent.getFitness() > 50000; 
+    }
 
     private void cleanCoordinateAgent(Agent agent){
         List<Integer> rawPath = agent.pathMap;
@@ -401,7 +412,7 @@ public class GeneticStrategy {
         agent.pathMap = cleanPath;
     }
 
-    public int findTime(){
+    public int findFinalTime(){
         int useTime = 0;
         List<Integer> path = finalAgent.pathMap;
         for(int i = 1; i < path.size(); i++){
@@ -426,13 +437,6 @@ public class GeneticStrategy {
             }
         }
         return useTime;
-    }
-    
-    private void printPopulation(Agent[] population){
-        System.out.println("--- Top 3 Best Agents ---");
-        for (int i=0; i<Math.min(3, population.length); i++) {
-            System.out.println("Rank " + (i+1) + " | Fitness: " + population[i].getFitness());
-        }
     }
 
     private int convertToCoordinate(int r, int c){
