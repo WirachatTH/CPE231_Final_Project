@@ -5,24 +5,57 @@ import java.util.*;
 public class Agent {
     private int[] direct;
     private int fitness;
-    public List<Integer> pathMap;  //พิกัด(col 3ตัวแรกที่เหลือคือ row) index= ก้าวที่เดิน
+    private int calculatedTime; 
 
-    public Agent(int directSize){
-        direct = new int[directSize];
-        pathMap = new ArrayList<>();
-        pathMap.add(0, 1001); //เริ่มต้นที่จุดเริ่มต้นเสมอ
+    private boolean isEvaluated = false; 
+
+    public List<Integer> pathMap; 
+    public boolean[] visitedFlags; 
+    private int mapSize; 
+
+    public Agent(int directSize, int mapSize){
+        this.direct = new int[directSize];
+        
+        this.pathMap = new ArrayList<>(directSize > 100 ? directSize : 100); 
+        
+        this.mapSize = mapSize;
+        this.visitedFlags = new boolean[mapSize];
+
+        pathMap.add(1001); 
+        if (1001 < mapSize) visitedFlags[1001] = true;
     }
 
-    public void setPath(int stepIndex, int coordinate){
-        pathMap.add(stepIndex, coordinate);
+    public void addPath(int coordinate) {
+        pathMap.add(coordinate);
+        if (coordinate >= 0 && coordinate < mapSize) {
+            visitedFlags[coordinate] = true;
+        }
+    }
+
+    public void clearPath() {
+        pathMap.clear();
+        Arrays.fill(visitedFlags, false);
+    }
+
+    public boolean isVisited(int coordinate) {
+        if (coordinate < 0 || coordinate >= mapSize) return false;
+        return visitedFlags[coordinate];
+    }
+    
+    public boolean isEvaluated() {
+        return isEvaluated;
+    }
+
+    public void setEvaluated(boolean evaluated) {
+        this.isEvaluated = evaluated;
+    }
+
+    public void markDirty() {
+        this.isEvaluated = false;
     }
 
     public void setFitness(int fitness){
         this.fitness = fitness;
-    }
-
-    public List<Integer> getPath(){
-        return pathMap;
     }
 
     public int getFitness() {
@@ -35,5 +68,18 @@ public class Agent {
 
     public void setDirect(int[] direct) {
         this.direct = direct;
+        this.markDirty();
+    }
+    
+    public void setCalculatedTime(int time) {
+        this.calculatedTime = time;
+    }
+    
+    public int getCalculatedTime() {
+        return calculatedTime;
+    }
+    
+    public List<Integer> getPath(){
+        return pathMap;
     }
 }
