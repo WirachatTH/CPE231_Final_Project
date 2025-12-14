@@ -35,7 +35,7 @@ public class GeneticStrategy {
     
     public void solve(Agent[] population){
         Agent[] tempPopulation = new Agent[population.length];
-        
+        int maxGeneration = 50000;
         int totalStagnation = 0;
         int explosionTimer = 0;
         double lastBestFitness = -1;
@@ -78,7 +78,7 @@ public class GeneticStrategy {
             }
 
             // 3. เงื่อนไขหยุด
-            if (solutionFound && totalStagnation > stagnationLimit) {
+            if (solutionFound && totalStagnation > stagnationLimit || gen == maxGeneration) {
                  break;
             }
 
