@@ -8,486 +8,327 @@ public class GeneticStrategy {
     private final int startRow, startCol;
     private final int goalRow, goalCol;
 
-    private int pathLimit;
-    private Agent finalAgent;
-    private int mapSize;
+    // GA Parameters
+    private final int POPULATION_SIZE = 1500;
+    private final int MAX_GENERATIONS = 100000;
+    private int currentGenomeLength;
 
-    private final Random globalRand = new Random();
+    // Stop Conditions
+    private final int MAX_USELESS_RESETS = 5;
+    private final long TIME_LIMIT_PER_ATTEMPT_MS = 59000; // 59s per attempt
+    private long startTime;
 
-    // ทิศทาง: 0=Down, 1=Right, 2=Up, 3=Left
+    // Directions: 0=Down, 1=Right, 2=Up, 3=Left
     private final int[] dRow = {1, 0, -1, 0};
     private final int[] dCol = {0, 1, 0, -1};
+
+    private final Random rand = new Random();
+
+    private Agent bestAgentFound = null;
+    private int bestCostFound = Integer.MAX_VALUE;
+
 
     public GeneticStrategy(int[][] map){
         this.map = map;
         this.rows = map.length;
         this.cols = map[0].length;
-        this.mapSize = rows * cols;
+
+        // 1. HARDCODED ENDPOINTS
         this.startRow = 1;
         this.startCol = 1;
         this.goalRow = rows - 2;
         this.goalCol = cols - 2;
-        this.pathLimit = ((rows * cols)/12 < 400)? (int)((rows * cols)/1.25) : (rows * cols)/12 ; 
-        
-        Agent[] population = createInitial();
-        this.solve(population);
+
+        System.out.println("[Config] Start: (" + startRow + "," + startCol + ") -> Goal: (" + goalRow + "," + goalCol + ")");
+
+        // Reset State
+        this.bestAgentFound = null;
+        this.bestCostFound = Integer.MAX_VALUE;
+        this.currentGenomeLength = rows * cols;
+        this.startTime = System.currentTimeMillis();
+
+        // Run the Solver (จะจบก็ต่อเมื่อ 59s หรือ status 5/5 หรือ gen limit)
+        solve(createInitialPopulation());
+
+        System.out.println();
     }
-    
-    public void solve(Agent[] population){
-        Agent[] tempPopulation = new Agent[population.length];
-        int maxGeneration = 50000;
-        int totalStagnation = 0;
-        int explosionTimer = 0;
-        double lastBestFitness = -1;
-        boolean solutionFound = false;
+
+    private Agent[] createInitialPopulation() {
+        Agent[] pop = new Agent[POPULATION_SIZE];
+        for (int i = 0; i < POPULATION_SIZE; i++) {
+            pop[i] = new Agent(currentGenomeLength, rows * cols);
+            generateBiasedDNA(pop[i]);
+        }
+        return pop;
+    }
+
+    private void generateBiasedDNA(Agent agent) {
+        int[] dna = agent.getDirect();
+        int limit = Math.min(dna.length, currentGenomeLength);
+        for (int j = 0; j < limit; j++) {
+            dna[j] = (rand.nextDouble() < 0.7) ? getDirectionTowardsGoal() : rand.nextInt(4);
+        }
+        // กันกรณี Agent constructor ตั้ง evaluated เป็น true
+        agent.setEvaluated(false);
+    }
+
+    private int getDirectionTowardsGoal() {
+        if (rand.nextBoolean()) return (goalRow > startRow) ? 0 : 2;
+        else return (goalCol > startCol) ? 1 : 3;
+    }
+
+    private boolean isTimeUp() {
+        long elapsed = System.currentTimeMillis() - startTime;
+        return elapsed >= TIME_LIMIT_PER_ATTEMPT_MS;
+    }
+
+    public void solve(Agent[] population) {
         int gen = 0;
+        int noImprovement = 0;
+        int consecutiveResetsWithoutGain = 0;
+        int lastRecordedBest = Integer.MAX_VALUE;
 
-        int stagnationLimit = 200 * cols;
-        int explosionLimit = rows * 20;
+        while (gen < MAX_GENERATIONS) {
+            if (isTimeUp()) {
+                break; // ออกเพราะครบ 59s
+            }
 
-        while (true) {
-            
             // 1. Evaluate
             Arrays.stream(population).parallel().forEach(this::evaluateAgent);
+            Arrays.sort(population, Comparator.comparingDouble(Agent::getFitness).reversed());
 
-            // 2. เรียงลำดับ Fitness
-            Arrays.parallelSort(population, Comparator.comparingInt(Agent::getFitness).reversed());
+            // 2. Track Best
+            Agent currentBest = population[0];
 
-            double currentBestFitness = population[0].getFitness();
-            
-            // เจอ Goal ครั้งแรก
-            if (isGoalReached(population[0])) {
-                if (!solutionFound) {
-                    // [Performance] ดึงเวลาจากที่คำนวณไว้แล้ว ไม่ต้องหาใหม่
-                    System.out.println(">>> First Path Found at Gen: " + gen + " | Time: " + population[0].getCalculatedTime() + " <<<");
-                    solutionFound = true;
+            if (isGoalReached(currentBest)) {
+                int realCost = currentBest.getCalculatedTime();
+
+                if (realCost < bestCostFound) {
+                    bestCostFound = realCost;
+                    bestAgentFound = cloneAgent(currentBest);
+                    cleanCoordinateAgent(bestAgentFound);
+
+                    noImprovement = 0;
+                    consecutiveResetsWithoutGain = 0;
+
+                    // Optimization
+                    int pathLen = bestAgentFound.pathMap.size();
+                    if (pathLen > 0) {
+                        int proposedLength = (int)(pathLen * 2.0);
+                        int minSafeLength = Math.min(rows * cols, 500);
+                        if (proposedLength < currentGenomeLength) {
+                            currentGenomeLength = Math.max(proposedLength, minSafeLength);
+                            System.out.println(">>> Optimizing Genome Size: " + currentGenomeLength);
+                        }
+                    }
+
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    System.out.println(">>> NEW RECORD: " + bestCostFound + " (Gen " + gen + ", " + elapsed/1000.0 + "s) <<<");
+
+                } else {
+                    noImprovement++;
                 }
-            }
-
-            // เช็ค Stagnation
-            if (Math.abs(currentBestFitness - lastBestFitness) < 0.001) {
-                totalStagnation++;
-                explosionTimer++;
             } else {
-                if (solutionFound) {
-                    System.out.println(">>> New Best Path Optimized! Gen: " + gen + " | Time: " + population[0].getCalculatedTime() + " <<<");
-                }
-                totalStagnation = 0;
-                explosionTimer = 0;
-                lastBestFitness = currentBestFitness;
+                if (bestCostFound != Integer.MAX_VALUE) noImprovement++;
             }
 
-            // 3. เงื่อนไขหยุด
-            if (solutionFound && totalStagnation > stagnationLimit || gen == maxGeneration) {
-                 break;
-            }
+            // 3. Stagnation Breaker
+            if (noImprovement > 400 && bestAgentFound != null) {
+                System.out.println("--- STAGNATION (" + noImprovement + "). Mass Mutation... ---");
 
-            boolean triggerExplosion = (explosionTimer > explosionLimit);
-            if (triggerExplosion) explosionTimer = 0;
-
-            // 4. Elitism
-            int elitismCount = (int)(population.length * 0.1); 
-            if (elitismCount < 2) elitismCount = 2;
-            System.arraycopy(population, 0, tempPopulation, 0, elitismCount);
-
-            // Rescue Bad Winners logic
-            int rescueCount = 0;
-            int maxRescue = 30;
-            
-            for (int i = elitismCount; i < population.length; i += 15) {
-                if (rescueCount >= maxRescue) break;
-                if (isGoalReached(population[i])) {
-                    tempPopulation[elitismCount + rescueCount] = population[i];
-                    rescueCount++;
+                if (bestCostFound < lastRecordedBest) {
+                    lastRecordedBest = bestCostFound;
+                    consecutiveResetsWithoutGain = 0;
                 } else {
-                    break; 
+                    consecutiveResetsWithoutGain++;
+                    System.out.println("   (Status: " + consecutiveResetsWithoutGain + "/" + MAX_USELESS_RESETS + " resets w/o gain)");
                 }
-            }
-            
-            int totalProtected = elitismCount + rescueCount;
-            double currentMutationRate = (explosionTimer > 100) ? 0.9 : 0.4; 
-            
-            // 5. สร้างประชากรใหม่
-            for(int i = totalProtected; i < population.length; i++){
-                double survivors = (rows < 30) ? 0.45 : 0.6; 
-                
-                if (triggerExplosion && i > (population.length * survivors)) {
-                    tempPopulation[i] = new Agent(pathLimit, mapSize);
-                    randomPathNew(tempPopulation[i]);
-                } else {
-                    tempPopulation[i] = startCrossOver(population);
-                    mutate(tempPopulation[i], currentMutationRate);
+
+                if (consecutiveResetsWithoutGain >= MAX_USELESS_RESETS) {
+                    System.out.println(">>> STOPPING: Converged at " + bestCostFound + ".");
+                    break; // ออกเพราะ status 5/5
                 }
+
+                population[0] = cloneAgent(bestAgentFound);
+                int mutants = (int)(POPULATION_SIZE * 0.4);
+                for(int i=1; i<=mutants; i++) {
+                    population[i] = cloneAgent(bestAgentFound);
+                    mutateScramble(population[i]);
+                }
+                for(int i=mutants+1; i<POPULATION_SIZE; i++) {
+                    population[i] = new Agent(currentGenomeLength, rows * cols);
+                    generateBiasedDNA(population[i]);
+                }
+                noImprovement = 0;
             }
-            
-            population = tempPopulation.clone();
-            
-            if (gen % 1000 == 0) {
-                 System.out.println("Gen " + gen + " | Best Fitness: " + population[0].getFitness() + " | Time: " + population[0].getCalculatedTime());
+
+            if (gen % 100 == 0) {
+                String status = (bestCostFound == Integer.MAX_VALUE) ? "Searching..." : String.valueOf(bestCostFound);
+                long elapsed = System.currentTimeMillis() - startTime;
+                System.out.println("Gen " + gen + " | Best: " + status + " | Time: " + elapsed/1000.0 + "s");
             }
+
+            // 4. Breeding
+            Agent[] nextGen = new Agent[POPULATION_SIZE];
+            int eliteCount = (int)(POPULATION_SIZE * 0.02);
+            for (int i = 0; i < eliteCount; i++) nextGen[i] = cloneAgent(population[i]);
+
+            for (int i = eliteCount; i < POPULATION_SIZE; i++) {
+                Agent p1 = tournamentSelect(population);
+                Agent p2 = tournamentSelect(population);
+                Agent child = crossover(p1, p2);
+                mutate(child);
+                nextGen[i] = child;
+            }
+            population = nextGen;
             gen++;
         }
 
-        finalAgent = population[0];
-        // Clean Path รอบสุดท้ายเพื่อความสวยงามก่อนจบ
-        cleanCoordinateAgent(finalAgent);
-        
-        System.out.println("Time taken by Best Agent (Optimized): " + findFinalTime());
+        // ===== FINAL RESULT =====
+        if (bestAgentFound != null && isGoalReached(bestAgentFound)) {
+            cleanCoordinateAgent(bestAgentFound);
+            long totalTime = System.currentTimeMillis() - startTime;
+            System.out.println("=== FINAL RESULT ===");
+            System.out.println("Total Time: " + totalTime/1000.0 + " seconds");
+            System.out.println("Final Lowest Cost: " + bestAgentFound.getCalculatedTime());
+            System.out.println("Path Length: " + bestAgentFound.pathMap.size() + " steps");
+        } else {
+            System.out.println("Failed to find path.");
+        }
     }
 
-    // --- Core Logic ใหม่ รวมร่าง Fitness + Simulation ---
     private void evaluateAgent(Agent agent) {
         if (agent.isEvaluated()) return;
-        // 1. Reset Agent
         agent.clearPath();
-        
-        int curR = startRow;
-        int curC = startCol;
-        int startCoord = convertToCoordinate(curR, curC);
-        
-        agent.addPath(startCoord); // ใส่จุดเริ่ม + mark visited
-        
-        int[] direct = agent.getDirect();
-        double score = 10000;
-        int calculatedTime = 0;
-        boolean reachedGoal = false;
 
-        // 2. Simulate Walk
-        for(int i = 0; i < direct.length; i++) {
-            if (curR == goalRow && curC == goalCol) {
-                reachedGoal = true;
+        boolean[] visited = new boolean[rows * cols];
+        int r = startRow;
+        int c = startCol;
+        int startCoord = r * cols + c;
+        agent.addPath(startCoord);
+        visited[startCoord] = true;
+
+        int cost = 0;
+        int[] dna = agent.getDirect();
+        boolean reached = false;
+        int limit = Math.min(dna.length, currentGenomeLength);
+
+        for (int k = 0; k < limit; k++) {
+            int move = dna[k];
+            int nr = r + dRow[move];
+            int nc = c + dCol[move];
+
+            if (nr < 0 || nr >= rows || nc < 0 || nc >= cols || nc >= map[nr].length || map[nr][nc] == -1) {
+                continue;
+            }
+
+            int nextCoord = nr * cols + nc;
+            if (visited[nextCoord]) continue;
+
+            r = nr; c = nc;
+            cost += map[r][c];
+            agent.addPath(nextCoord);
+            visited[nextCoord] = true;
+
+            if (r == goalRow && c == goalCol) {
+                reached = true;
                 break;
             }
-
-            int move = direct[i];
-            int nextR = curR + dRow[move];
-            int nextC = curC + dCol[move];
-            
-            // Check Bounds & Walls
-            if(nextR < 0 || nextR >= rows || nextC < 0 || nextC >= cols || map[nextR][nextC] == -1) {
-                score -= 5000;
-                break; 
-            }
-            
-            // Valid Move
-            calculatedTime += map[nextR][nextC];
-            curR = nextR;
-            curC = nextC;
-            
-            agent.addPath(convertToCoordinate(curR, curC)); 
-            
-            score += 1;
         }
 
-        // 3. Calculate Fitness
-        int distance = Math.abs(goalRow - curR) + Math.abs(goalCol - curC);
-
-        if (reachedGoal) {
-            score += 100000; 
-            score -= (calculatedTime * 7);
+        double fitness;
+        if (reached) {
+            fitness = 100_000_000.0 + (1_000_000.0 - cost);
         } else {
-            score -= (distance * 20); 
+            int dist = Math.abs(goalRow - r) + Math.abs(goalCol - c);
+            fitness = 10_000.0 - (dist * 10.0);
         }
-
-        if (score < 1) score = 1;
-        
-        agent.setFitness((int)score);
-        agent.setCalculatedTime(calculatedTime);
+        agent.setFitness((int)fitness);
+        agent.setCalculatedTime(cost);
         agent.setEvaluated(true);
     }
 
-    public Agent[] createInitial(){
-        int popSize = 300;
-        Agent[] population = new Agent[popSize]; 
-        for(int i = 0; i < popSize; i++){
-            population[i] = new Agent(pathLimit, mapSize);
-            randomPathNew(population[i]);
+    private Agent tournamentSelect(Agent[] pop) {
+        Agent best = null;
+        for (int i = 0; i < 5; i++) {
+            Agent cand = pop[rand.nextInt(POPULATION_SIZE)];
+            if (best == null || cand.getFitness() > best.getFitness()) best = cand;
         }
-        return population;
+        return best;
     }
 
-    private void randomPathNew(Agent agent){
-        int[] direct = agent.getDirect();
-        int sizePath = direct.length;
-        
-        agent.clearPath();
-        int startCoord = convertToCoordinate(startRow, startCol);
-        agent.addPath(startCoord);
-        
-        int currentRow = startRow;
-        int currentCol = startCol;
+    private Agent crossover(Agent p1, Agent p2) {
+        int len1 = p1.getDirect().length;
+        int len2 = p2.getDirect().length;
+        int targetLen = currentGenomeLength;
+        Agent child = new Agent(targetLen, rows * cols);
 
-        for(int i = 0; i < sizePath; i++){
-            int selectedMove = selectMoveWithBias(currentRow, currentCol, agent, (i > 0 ? direct[i-1] : -1));
+        int[] c = child.getDirect();
+        int[] d1 = p1.getDirect();
+        int[] d2 = p2.getDirect();
 
-            if (selectedMove == -1) break;
-            
-            direct[i] = selectedMove;
-            currentRow += dRow[selectedMove];
-            currentCol += dCol[selectedMove];
-            
-            int newCoord = convertToCoordinate(currentRow, currentCol);
-            agent.addPath(newCoord);
-            
-            if (currentRow == goalRow && currentCol == goalCol) break;
-        }
+        int cut = rand.nextInt(targetLen);
+        int limit = Math.min(targetLen, Math.min(len1, len2));
+
+        for(int i=0; i<limit; i++) c[i] = (i < cut) ? d1[i] : d2[i];
+
+        child.setEvaluated(false);
+        return child;
     }
 
-    private int selectMoveWithBias(int r, int c, Agent agent, int prevMove) {
-        int[] candidates = new int[4];
-        int count = 0;
-
-        for(int j = 0; j < 4; j++){
-            int nextR = r + dRow[j];
-            int nextC = c + dCol[j];
-            
-            if(nextR >= 0 && nextR < rows && nextC >= 0 && nextC < cols) {
-                int nextID = (nextR * cols) + nextC;
-
-                // ห้าม U-Turn
-                if( map[nextR][nextC] != -1 && !agent.isVisited(nextID) ){
-                    if (prevMove != -1) {
-                         int opposite = (prevMove + 2) % 4;
-                         if (j == opposite) continue; 
-                    }
-                    candidates[count++] = j;
-                }
-            }
+    private void mutate(Agent agent) {
+        int[] dna = agent.getDirect();
+        int limit = Math.min(dna.length, currentGenomeLength);
+        for(int i=0; i<limit; i++) {
+            if(rand.nextDouble() < 0.01) dna[i] = rand.nextInt(4);
         }
-
-        if (count == 0) return -1;
-        if (count == 1) return candidates[0]; 
-
-        double bestScore = Double.MAX_VALUE;
-        int bestMove = candidates[0];
-        
-        for (int i = 0; i < count; i++) {
-            int move = candidates[i];
-            int r2 = r + dRow[move];
-            int c2 = c + dCol[move];
-            
-            int dist = Math.abs(goalRow - r2) + Math.abs(goalCol - c2);
-            int cost = map[r2][c2];
-            
-            double weight = 5.0 + (globalRand.nextDouble() * 10.0);
-            double score = dist + (cost * weight);
-            
-            if (score < bestScore) {
-                bestScore = score;
-                bestMove = move;
-            }
-        }
-
-        double rate = (rows < 30 || rows > 60) ? 0.7 : 0.05;
-        if (globalRand.nextDouble() < rate) {
-            return bestMove; 
-        } else {
-            return candidates[globalRand.nextInt(count)]; 
-        }
+        agent.setEvaluated(false);
     }
 
-    // --- Genetic Operations ---
-    public Agent startCrossOver(Agent[] population){
-        int limit = (int)(population.length * 1); 
-        if (limit < 2) limit = population.length;
-        
-        int indexP1 = globalRand.nextInt(limit);
-        int indexP2 = globalRand.nextInt(limit);
-        while(indexP1 == indexP2) indexP2 = globalRand.nextInt(limit);
-
-        Agent parentA = population[indexP1];
-        Agent parentB = population[indexP2];
-        
-        if (globalRand.nextBoolean()) {
-            return this.crossover(parentA, parentB);       
-        } else {
-            return this.crossoverMultiPointDynamic(parentA, parentB); 
-        }
-    }
-
-    private Agent crossover(Agent parentA, Agent parentB){
-        int[] directA = parentA.getDirect();
-        int[] directB = parentB.getDirect();
-        int len = directA.length;
-
-        int cutIndex = globalRand.nextInt(len - 2) + 1; 
-
-        Agent newAgent = new Agent(len, mapSize);
-        int[] newDirect = newAgent.getDirect();
-        System.arraycopy(directA, 0, newDirect, 0, cutIndex);
-
-        Integer coordinateCut = -1;
-        if (cutIndex < parentA.pathMap.size()) coordinateCut = parentA.pathMap.get(cutIndex);
-
-        boolean hasPass = coordinateCut != -1 && parentB.pathMap.contains(coordinateCut);
-        
-        if(hasPass){
-            int indexInB = parentB.pathMap.indexOf(coordinateCut);
-            int startCopyB = indexInB + 1;
-            int spaceLeft = len - cutIndex;
-            int actualDataLeftInB = len - startCopyB; 
-            int copyCount = Math.min(spaceLeft, actualDataLeftInB);
-            if (copyCount > 0 && startCopyB < len) { 
-                 System.arraycopy(directB, startCopyB, newDirect, cutIndex, copyCount);
-            }
-            int filledUntil = cutIndex + copyCount;
-            while(filledUntil < len) newDirect[filledUntil++] = globalRand.nextInt(4);
-        } else {
-            int filledUntil = cutIndex;
-            while(filledUntil < len) newDirect[filledUntil++] = globalRand.nextInt(4);
-        }
-        return newAgent;
-    }
-
-    private Agent crossoverMultiPointDynamic(Agent parentA, Agent parentB) {
-        int[] directA = parentA.getDirect();
-        int[] directB = parentB.getDirect();
-        int len = directA.length;
-        
-        Agent newAgent = new Agent(len, mapSize);
-        int[] newDirect = newAgent.getDirect();
-
-        int mapScale = this.rows + this.cols;
-        int numCuts = (mapScale / 40)+1; 
-        if (numCuts > 3) numCuts = 3;
-
-        Set<Integer> cutPoints = new TreeSet<>(); 
-        while (cutPoints.size() < numCuts) {
-            cutPoints.add(globalRand.nextInt(len - 2) + 1);
-        }
-        
-        List<Integer> cuts = new ArrayList<>(cutPoints);
-        cuts.add(len);
-
-        int currentIndex = 0;
-        boolean useParentA = true; 
-        
-        for (int cutIndex : cuts) {
-            int lengthToCopy = cutIndex - currentIndex;
-            if (useParentA) {
-                System.arraycopy(directA, currentIndex, newDirect, currentIndex, lengthToCopy);
-            } else {
-                System.arraycopy(directB, currentIndex, newDirect, currentIndex, lengthToCopy);
-            }
-            currentIndex = cutIndex;
-            useParentA = !useParentA;
-        }
-        return newAgent;
-    }
-
-    private void mutate(Agent agent, double mutationRate) {
-        int[] direct = agent.getDirect();
-        
-        if (globalRand.nextDouble() < mutationRate) {
-            int len = direct.length;
-            int mutateIndex = globalRand.nextInt(len - 1) + 1;
-
-            int currentR = startRow;
-            int currentC = startCol;
-            boolean possible = true;
-            
-            for (int i = 0; i < mutateIndex; i++) {
-                currentR += dRow[direct[i]];
-                currentC += dCol[direct[i]];
-                if(currentR < 0 || currentR >= rows || currentC < 0 || currentC >= cols || map[currentR][currentC] == -1){
-                    possible = false;
-                    break;
-                }
-            }
-            if(possible) repairPathTail(agent, currentR, currentC, mutateIndex);
-            agent.markDirty();
-        }
-    }
-
-    private void repairPathTail(Agent agent, int startR, int startC, int startIndex) {
-        int[] direct = agent.getDirect();
-        List<Integer> path = agent.pathMap;
-        
-        Arrays.fill(agent.visitedFlags, false);
-        
-        if (startIndex < path.size()) {
-            path.subList(startIndex, path.size()).clear();
-        } else {
-            path.clear();
-        }
-
-        if(path.isEmpty()){
-             int sc = convertToCoordinate(startRow, startCol);
-             path.add(sc);
-        }
-
-        for(Integer coord : path){
-            if(coord >= 0 && coord < mapSize) agent.visitedFlags[coord] = true;
-        }
-
-        int currentRow = startR; 
-        int currentCol = startC;
-
-        for(int i = startIndex; i < direct.length; i++){
-            int selectedMove = selectMoveWithBias(currentRow, currentCol, agent, (i > 0 ? direct[i-1] : -1));
-            
-            if (selectedMove == -1) {
-                direct[i] = globalRand.nextInt(4); 
-            } else {
-                if (currentRow == goalRow && currentCol == goalCol) break;
-                direct[i] = selectedMove;
-                currentRow += dRow[selectedMove];
-                currentCol += dCol[selectedMove];
-                
-                int newCoord = convertToCoordinate(currentRow, currentCol);
-                
-                if (currentRow >= 0 && currentRow < rows && currentCol >= 0 && currentCol < cols) {
-                    agent.addPath(newCoord); 
-                }
-            }
-        }
+    private void mutateScramble(Agent agent) {
+        int[] dna = agent.getDirect();
+        int limit = Math.min(dna.length, currentGenomeLength);
+        int start = rand.nextInt(Math.max(1, limit / 2));
+        for(int i=start; i<limit; i++) dna[i] = rand.nextInt(4);
+        agent.setEvaluated(false);
     }
 
     private boolean isGoalReached(Agent agent) {
-        return agent.getFitness() > 50000; 
+        if (agent == null || agent.pathMap == null || agent.pathMap.isEmpty()) return false;
+        int last = agent.pathMap.get(agent.pathMap.size()-1);
+        return (last/cols == goalRow && last%cols == goalCol);
+    }
+
+    private Agent cloneAgent(Agent original) {
+        int len = original.getDirect().length;
+        if (len < currentGenomeLength) len = currentGenomeLength;
+
+        Agent clone = new Agent(len, rows * cols);
+        int copyLimit = Math.min(original.getDirect().length, len);
+        System.arraycopy(original.getDirect(), 0, clone.getDirect(), 0, copyLimit);
+
+        clone.setFitness(original.getFitness());
+        clone.setCalculatedTime(original.getCalculatedTime());
+        clone.pathMap = new ArrayList<>(original.pathMap);
+        clone.setEvaluated(original.isEvaluated());
+
+        return clone;
     }
 
     private void cleanCoordinateAgent(Agent agent){
-        List<Integer> rawPath = agent.pathMap;
-        
-        int goalCoord = convertToCoordinate(goalRow, goalCol);
-        int goalIndex = rawPath.indexOf(goalCoord);
-        
-        if(goalIndex != -1 && goalIndex < rawPath.size() - 1){
-            rawPath.subList(goalIndex + 1, rawPath.size()).clear();
-        }
-        
-        List<Integer> cleanPath = new ArrayList<>();
-        for (Integer coord : rawPath) {
-            int existingIndex = cleanPath.indexOf(coord);
-            if (existingIndex != -1) {
-                cleanPath.subList(existingIndex + 1, cleanPath.size()).clear();
-            } else {
-                cleanPath.add(coord);
-            }
-        }
-        agent.pathMap = cleanPath;
+        List<Integer> raw = agent.pathMap;
+        int gCoord = (goalRow * cols) + goalCol;
+        int idx = raw.indexOf(gCoord);
+        if(idx != -1 && idx < raw.size()-1) raw.subList(idx+1, raw.size()).clear();
     }
 
-    public int findFinalTime(){
-        int useTime = 0;
-        List<Integer> path = finalAgent.pathMap;
-        for(int i = 1; i < path.size(); i++){
-            int coord = path.get(i);
-            int r = coord / cols; 
-            int c = coord % cols;
-            if(r >= 0 && r < rows && c >= 0 && c < cols) {
-                useTime += map[r][c];
-            }
-        }
-        return useTime;
+    public int findFinalTime() {
+        if (bestAgentFound != null && isGoalReached(bestAgentFound)) return bestAgentFound.getCalculatedTime();
+        return -1;
     }
 
-    private int convertToCoordinate(int r, int c){
-        return (r * this.cols) + c; 
-    }
-
-    public List<Integer> getCoordinate(){
-        return finalAgent.pathMap;
+    public List<Integer> getCoordinate() {
+        if (bestAgentFound != null && isGoalReached(bestAgentFound)) return new ArrayList<>(bestAgentFound.pathMap);
+        return new ArrayList<>();
     }
 }
